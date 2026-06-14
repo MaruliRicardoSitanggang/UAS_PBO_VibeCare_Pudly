@@ -83,7 +83,8 @@ Session Management : Pengelolaan session pengguna yang aman
 - Maven 3.8 atau lebih baru
 -Git untuk clone repositori
 
-**Langkah 1: **Clone Repositori
+
+**Langkah 1:** Clone Repositori
 bash
 git clone https://github.com/username/CareVibe.git
 cd CareVibe
