@@ -9,7 +9,6 @@ import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
-import javafx.scene.shape.Circle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Modality;
@@ -32,10 +31,13 @@ public class MeditationView extends VBox {
         content.setPadding(new Insets(0, 0, 20, 0));
         content.setAlignment(Pos.TOP_LEFT);
 
+        // Hapus createControllerSection() dari sini
         content.getChildren().addAll(createHeaderSection(), createMeditasiSection(), createMusikSection());
         scrollPane.setContent(content);
         this.getChildren().add(scrollPane);
     }
+
+    // ==================== ORIGINAL VIEW METHODS ====================
 
     private VBox createHeaderSection() {
         VBox header = new VBox(8);
@@ -67,7 +69,6 @@ public class MeditationView extends VBox {
         cardContainer.setPadding(new Insets(10, 0, 10, 0));
         cardContainer.setAlignment(Pos.TOP_LEFT);
 
-        // Data meditasi: title, desc, durationMenit, points, warna, steps
         Object[][] meditasiList = {
                 {
                         "Meditasi Pernapasan",
@@ -198,7 +199,6 @@ public class MeditationView extends VBox {
                         "-fx-cursor: hand;"
         );
 
-        // Hover effect - warna lebih gelap
         btnStart.setOnMouseEntered(e -> btnStart.setStyle(
                 "-fx-background-color: " + color + "CC;" +
                         "-fx-text-fill: white;" +
@@ -234,7 +234,6 @@ public class MeditationView extends VBox {
         VBox root = new VBox(0);
         root.setStyle("-fx-background-color: #F9FAFB;");
 
-        // Banner
         VBox banner = new VBox(8);
         banner.setStyle("-fx-background-color: " + color + "; -fx-padding: 24 20 20 20;");
         banner.setAlignment(Pos.CENTER);
@@ -259,7 +258,6 @@ public class MeditationView extends VBox {
 
         banner.getChildren().addAll(lblTitle, lblTimer, progressBar);
 
-        // Body
         VBox body = new VBox(16);
         body.setPadding(new Insets(20, 24, 20, 24));
         body.setAlignment(Pos.TOP_CENTER);
@@ -301,11 +299,6 @@ public class MeditationView extends VBox {
         btnPrev.setStyle(outlineStyle);
         btnNext.setStyle(outlineStyle);
 
-        btnPrev.setOnMouseEntered(e -> btnPrev.setOpacity(0.8));
-        btnPrev.setOnMouseExited(e -> btnPrev.setOpacity(1.0));
-        btnNext.setOnMouseEntered(e -> btnNext.setOpacity(0.8));
-        btnNext.setOnMouseExited(e -> btnNext.setOpacity(1.0));
-
         stepNav.getChildren().addAll(btnPrev, btnNext);
 
         HBox controlBox = new HBox(15);
@@ -321,20 +314,12 @@ public class MeditationView extends VBox {
         btnPause.setStyle("-fx-background-color: #6B7280; -fx-text-fill: white; -fx-font-size: 13px; -fx-font-weight: bold; -fx-padding: 10 24 10 24; -fx-background-radius: 25; -fx-cursor: hand;");
         btnStop.setStyle("-fx-background-color: #EF4444; -fx-text-fill: white; -fx-font-size: 13px; -fx-font-weight: bold; -fx-padding: 10 24 10 24; -fx-background-radius: 25; -fx-cursor: hand;");
 
-        // Hover effect
-        btnStartTimer.setOnMouseEntered(e -> btnStartTimer.setStyle("-fx-background-color: " + color + "CC; -fx-text-fill: white; -fx-font-size: 13px; -fx-font-weight: bold; -fx-padding: 10 24 10 24; -fx-background-radius: 25; -fx-cursor: hand;"));
-        btnStartTimer.setOnMouseExited(e -> btnStartTimer.setStyle(filledStyle));
-        btnPause.setOnMouseEntered(e -> btnPause.setStyle("-fx-background-color: #4B5563; -fx-text-fill: white; -fx-font-size: 13px; -fx-font-weight: bold; -fx-padding: 10 24 10 24; -fx-background-radius: 25; -fx-cursor: hand;"));
-        btnPause.setOnMouseExited(e -> btnPause.setStyle("-fx-background-color: #6B7280; -fx-text-fill: white; -fx-font-size: 13px; -fx-font-weight: bold; -fx-padding: 10 24 10 24; -fx-background-radius: 25; -fx-cursor: hand;"));
-        btnStop.setOnMouseEntered(e -> btnStop.setStyle("-fx-background-color: #DC2626; -fx-text-fill: white; -fx-font-size: 13px; -fx-font-weight: bold; -fx-padding: 10 24 10 24; -fx-background-radius: 25; -fx-cursor: hand;"));
-        btnStop.setOnMouseExited(e -> btnStop.setStyle("-fx-background-color: #EF4444; -fx-text-fill: white; -fx-font-size: 13px; -fx-font-weight: bold; -fx-padding: 10 24 10 24; -fx-background-radius: 25; -fx-cursor: hand;"));
-
         btnPause.setDisable(true);
         btnStop.setDisable(true);
 
         controlBox.getChildren().addAll(btnStartTimer, btnPause, btnStop);
 
-        Label lblCoin = new Label(+ points + " Poin berhasil diperoleh!");
+        Label lblCoin = new Label("+" + points + " Poin berhasil diperoleh!");
         lblCoin.setStyle(
                 "-fx-background-color: #D1FAE5;" +
                         "-fx-text-fill: #065F46;" +
@@ -348,7 +333,6 @@ public class MeditationView extends VBox {
         body.getChildren().addAll(lblStepNum, stepCard, stepNav, controlBox, lblCoin);
         root.getChildren().addAll(banner, body);
 
-        // State variables
         final int[] secondsLeft = {totalSeconds};
         final boolean[] started = {false};
         final boolean[] paused = {false};
@@ -440,18 +424,15 @@ public class MeditationView extends VBox {
                         "-fx-background-radius: 25;" +
                         "-fx-cursor: hand;"
         );
-        closeButton.setOnMouseEntered(e -> closeButton.setStyle("-fx-background-color: #6B7280; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 13px; -fx-padding: 10 30 10 30; -fx-background-radius: 25; -fx-cursor: hand;"));
-        closeButton.setOnMouseExited(e -> closeButton.setStyle("-fx-background-color: #9CA3AF; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 13px; -fx-padding: 10 30 10 30; -fx-background-radius: 25; -fx-cursor: hand;"));
+        closeButton.setOnAction(e -> {
+            timeline.stop();
+            dialogStage.close();
+        });
 
         HBox closeBox = new HBox(closeButton);
         closeBox.setAlignment(Pos.CENTER);
         closeBox.setPadding(new Insets(0, 0, 20, 0));
         root.getChildren().add(closeBox);
-
-        closeButton.setOnAction(e -> {
-            timeline.stop();
-            dialogStage.close();
-        });
 
         Scene scene = new Scene(root, 500, 650);
         dialogStage.setScene(scene);
@@ -563,25 +544,6 @@ public class MeditationView extends VBox {
                         "-fx-cursor: hand;"
         );
         btnPlay.setMaxWidth(Double.MAX_VALUE);
-
-        btnPlay.setOnMouseEntered(e -> btnPlay.setStyle(
-                "-fx-background-color: " + color + "CC;" +
-                        "-fx-text-fill: white;" +
-                        "-fx-font-size: 12px;" +
-                        "-fx-font-weight: bold;" +
-                        "-fx-padding: 8 0 8 0;" +
-                        "-fx-background-radius: 20;" +
-                        "-fx-cursor: hand;"
-        ));
-        btnPlay.setOnMouseExited(e -> btnPlay.setStyle(
-                "-fx-background-color: " + color + ";" +
-                        "-fx-text-fill: white;" +
-                        "-fx-font-size: 12px;" +
-                        "-fx-font-weight: bold;" +
-                        "-fx-padding: 8 0 8 0;" +
-                        "-fx-background-radius: 20;" +
-                        "-fx-cursor: hand;"
-        ));
 
         btnPlay.setOnAction(e -> showMusicInfoDialog(title, description, color));
 
