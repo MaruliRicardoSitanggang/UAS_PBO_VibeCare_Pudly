@@ -87,17 +87,20 @@ Session Management : Pengelolaan session pengguna yang aman
 bash
 git clone https://github.com/username/CareVibe.git
 cd CareVibe
+
 **Langkah 2:** Menjalankan Backend (Spring Boot)
 bash
 cd CareVibe-BE
 mvn clean install
 mvn spring-boot:run
 Backend akan berjalan di http://localhost:8080
+
 **Langkah 3:** Menjalankan Frontend (JavaFX)
 bash
 cd CareVibe-FE
 mvn clean javafx:run
-**Langkah 4: **Login ke Aplikasi
+
+**Langkah 4**: Login ke Aplikasi
 Role	Email	Password
 Administrator	admin@vibecare.com	admin123
 Pengguna Biasa	user@example.com	password123
