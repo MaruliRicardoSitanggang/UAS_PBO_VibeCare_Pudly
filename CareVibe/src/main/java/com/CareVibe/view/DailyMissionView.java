@@ -33,18 +33,8 @@ public class DailyMissionView extends VBox {
         content.setPadding(new Insets(0, 0, 20, 0));
         content.setAlignment(Pos.TOP_LEFT);
 
-        // Header Section
-        VBox headerBox = createHeaderSection();
-
-        // Total Poin Card
-        VBox poinCard = createPoinCard();
-
-        // Mission Section
-        VBox missionSection = createMissionSection();
-
-        content.getChildren().addAll(headerBox, poinCard, missionSection);
+        content.getChildren().addAll(createHeaderSection(), createPoinCard(), createMissionSection());
         scrollPane.setContent(content);
-
         this.getChildren().add(scrollPane);
     }
 
@@ -80,7 +70,6 @@ public class DailyMissionView extends VBox {
         Label lblInfo = new Label("Terus kumpulkan poin untuk konsultasi gratis!");
         lblInfo.setStyle("-fx-text-fill: #D1FAE5; -fx-font-size: 12px;");
 
-        // Update poin secara real-time
         UserSession.setOnPointsChanged(() -> {
             lblPoints.setText(String.valueOf(UserSession.getPoints()));
             refreshMissions();
@@ -101,7 +90,6 @@ public class DailyMissionView extends VBox {
         missionContainer = new VBox(12);
         missionContainer.setAlignment(Pos.TOP_LEFT);
 
-        // Inisialisasi misi
         initializeMissions();
         refreshMissions();
 
@@ -111,48 +99,51 @@ public class DailyMissionView extends VBox {
 
     private void initializeMissions() {
         missions = new ArrayList<>();
+
+        // Data Misi
         missions.add(new DailyMission("Login Harian", "Login ke aplikasi setiap hari", 10));
         missions.add(new DailyMission("Tes Kesehatan Mental", "Selesaikan salah satu tes kesehatan mental", 25));
         missions.add(new DailyMission("Berbagi Cerita", "Bagikan cerita atau pengalaman di komunitas", 15));
         missions.add(new DailyMission("Meditasi 10 Menit", "Lakukan meditasi selama minimal 10 menit", 20));
 
-        // Load saved completion status dari UserSession (jika ada)
+        // Cek status otomatis untuk Login Harian (index 0)
+        if (UserSession.isLoggedIn() && !UserSession.hasCompletedMission("mission_0") && !missions.isEmpty()) {
+            missions.get(0).setCompleted(true);
+            UserSession.setMissionCompleted("mission_0", true);
+            UserSession.addPoints(missions.get(0).getRewardPoints());
+        }
+
         loadMissionStatus();
     }
 
     private void loadMissionStatus() {
-        // Cek status misi dari session (bisa disimpan di UserSession)
         for (int i = 0; i < missions.size(); i++) {
-            String key = "mission_" + i;
-            if (UserSession.hasCompletedMission(key)) {
+            if (UserSession.hasCompletedMission("mission_" + i)) {
                 missions.get(i).setCompleted(true);
             }
         }
     }
 
     private void saveMissionStatus(int index) {
-        String key = "mission_" + index;
-        UserSession.setMissionCompleted(key, true);
+        UserSession.setMissionCompleted("mission_" + index, true);
     }
 
     private void refreshMissions() {
         if (missionContainer == null) return;
         missionContainer.getChildren().clear();
-
         for (int i = 0; i < missions.size(); i++) {
-            DailyMission mission = missions.get(i);
-            VBox missionCard = createMissionCard(mission, i);
-            missionContainer.getChildren().add(missionCard);
+            missionContainer.getChildren().add(createMissionCard(missions.get(i), i));
         }
     }
 
     private VBox createMissionCard(DailyMission mission, int index) {
         VBox card = new VBox(10);
-        card.setStyle("-fx-background-color: white; -fx-background-radius: 16; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.08), 8, 0, 0, 2);");
+        card.setStyle("-fx-background-color: white; -fx-background-radius: 16; " +
+                "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.08), 8, 0, 0, 2);");
         card.setPadding(new Insets(18));
         card.setMaxWidth(Double.MAX_VALUE);
 
-        // Header: Nama misi dan poin
+        // Header
         HBox headerBox = new HBox(10);
         headerBox.setAlignment(Pos.CENTER_LEFT);
 
@@ -165,74 +156,115 @@ public class DailyMissionView extends VBox {
 
         Label lblPoints = new Label("+" + mission.getRewardPoints() + " Poin");
         lblPoints.setStyle(
-                "-fx-background-color: #FEF3C7;" +
-                        "-fx-text-fill: #D97706;" +
-                        "-fx-font-size: 12px;" +
-                        "-fx-font-weight: bold;" +
-                        "-fx-padding: 4 10 4 10;" +
-                        "-fx-background-radius: 20;"
+                "-fx-background-color: #FEF3C7; -fx-text-fill: #D97706; -fx-font-size: 12px;" +
+                        "-fx-font-weight: bold; -fx-padding: 4 10 4 10; -fx-background-radius: 20;"
         );
-
         headerBox.getChildren().addAll(lblMissionName, spacer1, lblPoints);
 
-        // Deskripsi misi
+        // Deskripsi
         Label lblDescription = new Label(mission.getDescription());
         lblDescription.setStyle("-fx-text-fill: #6B7280; -fx-font-size: 13px;");
 
-        // Status dan tombol
+        // Footer
         HBox footerBox = new HBox(15);
         footerBox.setAlignment(Pos.CENTER_LEFT);
         footerBox.setPadding(new Insets(10, 0, 0, 0));
 
         Label lblStatus = new Label(mission.isCompleted() ? "✓ Selesai" : "○ Belum Selesai");
-        lblStatus.setStyle(
-                mission.isCompleted() ?
-                        "-fx-text-fill: #10B981; -fx-font-size: 13px; -fx-font-weight: bold;" :
-                        "-fx-text-fill: #EF4444; -fx-font-size: 13px;"
-        );
+        lblStatus.setStyle(mission.isCompleted()
+                ? "-fx-text-fill: #10B981; -fx-font-size: 13px; -fx-font-weight: bold;"
+                : "-fx-text-fill: #EF4444; -fx-font-size: 13px;");
 
         Region spacer2 = new Region();
         HBox.setHgrow(spacer2, Priority.ALWAYS);
 
-        Button btnAction = new Button(mission.isCompleted() ? "Selesai" : "Tandai Selesai");
-        btnAction.setStyle(
-                mission.isCompleted() ?
-                        "-fx-background-color: #D1FAE5; -fx-text-fill: #059669; -fx-font-size: 12px; -fx-font-weight: bold; -fx-padding: 8 20 8 20; -fx-background-radius: 30; -fx-cursor: hand;" :
-                        "-fx-background-color: #10B981; -fx-text-fill: white; -fx-font-size: 12px; -fx-font-weight: bold; -fx-padding: 8 20 8 20; -fx-background-radius: 30; -fx-cursor: hand;"
+        // index 0 = Login Harian   → otomatis, tombol non-aktif
+        // index 1 = Tes Kesehatan  → harus dari halaman Tes, tombol "Kunjungi"
+        // index 2 = Berbagi Cerita → harus dari Komunitas, tombol "Kunjungi"
+        // index 3 = Meditasi       → bisa tandai manual
+        boolean canManualComplete = (index == 3);
+        boolean isAutoMission     = (index == 0);
+
+        String btnLabel;
+        if (mission.isCompleted())      btnLabel = "Selesai";
+        else if (isAutoMission)         btnLabel = "Otomatis";
+        else if (canManualComplete)     btnLabel = "Tandai Selesai";
+        else                            btnLabel = "Kunjungi";
+
+        Button btnAction = new Button(btnLabel);
+        btnAction.setStyle(mission.isCompleted() || isAutoMission
+                ? "-fx-background-color: #D1FAE5; -fx-text-fill: #059669; -fx-font-size: 12px; -fx-font-weight: bold; -fx-padding: 8 20 8 20; -fx-background-radius: 30; -fx-cursor: hand;"
+                : "-fx-background-color: #10B981; -fx-text-fill: white; -fx-font-size: 12px; -fx-font-weight: bold; -fx-padding: 8 20 8 20; -fx-background-radius: 30; -fx-cursor: hand;"
         );
 
-        if (!mission.isCompleted()) {
+        if (!mission.isCompleted() && !isAutoMission) {
             btnAction.setOnMouseEntered(e ->
                     btnAction.setStyle("-fx-background-color: #059669; -fx-text-fill: white; -fx-font-size: 12px; -fx-font-weight: bold; -fx-padding: 8 20 8 20; -fx-background-radius: 30; -fx-cursor: hand;")
             );
             btnAction.setOnMouseExited(e ->
                     btnAction.setStyle("-fx-background-color: #10B981; -fx-text-fill: white; -fx-font-size: 12px; -fx-font-weight: bold; -fx-padding: 8 20 8 20; -fx-background-radius: 30; -fx-cursor: hand;")
             );
+
+            btnAction.setOnAction(e -> {
+                if (canManualComplete) {
+                    // Meditasi: tandai selesai langsung
+                    mission.setCompleted(true);
+                    UserSession.addPoints(mission.getRewardPoints());
+                    saveMissionStatus(index);
+                    refreshMissions();
+                    showMissionCompleteDialog(mission.getMissionName(), mission.getRewardPoints());
+                } else {
+                    // Tes / Komunitas: tampilkan petunjuk
+                    showNavigationHint(index);
+                }
+            });
         }
 
-        btnAction.setOnAction(e -> {
-            if (!mission.isCompleted()) {
-                mission.setCompleted(true);
-                UserSession.addPoints(mission.getRewardPoints());
-                saveMissionStatus(index);
-                refreshMissions();
-
-                // Tampilkan notifikasi
-                showMissionCompleteDialog(mission.getMissionName(), mission.getRewardPoints());
-            }
-        });
-
         footerBox.getChildren().addAll(lblStatus, spacer2, btnAction);
-
         card.getChildren().addAll(headerBox, lblDescription, footerBox);
         return card;
+    }
+
+    // Dipanggil dari luar (MentalTestView, CommunityView) untuk selesaikan misi otomatis
+    public static void completeMissionExternally(int index) {
+        String key = "mission_" + index;
+        if (!UserSession.hasCompletedMission(key)) {
+            UserSession.setMissionCompleted(key, true);
+            // Poin ditambah sesuai reward masing-masing misi
+            int reward = switch (index) {
+                case 1 -> 25; // Tes Kesehatan Mental
+                case 2 -> 15; // Berbagi Cerita
+                default -> 0;
+            };
+            if (reward > 0) UserSession.addPoints(reward);
+        }
+    }
+
+    private void showNavigationHint(int index) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Cara Menyelesaikan Misi");
+        switch (index) {
+            case 1 -> {
+                alert.setHeaderText("Tes Kesehatan Mental");
+                alert.setContentText("Pergi ke menu \"Tes Kesehatan\" dan selesaikan salah satu tes untuk mendapatkan +25 poin.");
+            }
+            case 2 -> {
+                alert.setHeaderText("Berbagi Cerita");
+                alert.setContentText("Pergi ke menu \"Komunitas\" dan buat postingan untuk mendapatkan +15 poin.");
+            }
+            default -> {
+                alert.setHeaderText("Informasi");
+                alert.setContentText("Selesaikan misi untuk mendapatkan poin!");
+            }
+        }
+        alert.showAndWait();
     }
 
     private void showMissionCompleteDialog(String missionName, int points) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("Misi Selesai!");
         alert.setHeaderText("Selamat! Anda menyelesaikan misi:");
-        alert.setContentText( missionName + "\n\n +" + points + " Poin telah ditambahkan!\n\nTotal poin Anda sekarang: " + UserSession.getPoints());
+        alert.setContentText(missionName + "\n\n+" + points + " Poin telah ditambahkan!\n\nTotal poin Anda sekarang: " + UserSession.getPoints());
         alert.showAndWait();
     }
 }

@@ -1,6 +1,9 @@
 package com.CareVibe.view;
 
 import com.CareVibe.model.UserSession;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.geometry.Insets;
@@ -11,18 +14,34 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.util.Duration;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 public class CommunityView extends VBox {
 
-    private VBox feedBox;
-    private List<Post> posts = new ArrayList<>();
+    private final VBox feedBox;
+    private final List<Post> posts = new ArrayList<>();
     private String activeFilter = "Semua";
     private String searchQuery = "";
     private TextField searchField;
     private FlowPane tagContainer;
+    private Button backButton;
+    private HBox searchBox;
+
+    // Backend connection
+    private static final String BASE_URL = "http://localhost:8080/api/community";
+    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final String COLOR_BG       = "#F0FDF4";
     private static final String COLOR_PRIMARY   = "#10B981";
@@ -32,7 +51,6 @@ public class CommunityView extends VBox {
     private static final String COLOR_TEXT      = "#1F2937";
     private static final String COLOR_SUBTEXT   = "#6B7280";
     private static final String COLOR_BORDER    = "#E5E7EB";
-    private static final String COLOR_WHITE     = "white";
     private static final String COLOR_RED       = "#EF4444";
     private static final String COLOR_RED_L     = "#FEE2E2";
 
@@ -42,10 +60,12 @@ public class CommunityView extends VBox {
     };
 
     private static class Post {
+        Long id;
         String username, content, timeAgo, tag;
         int likes, comments;
         boolean likedByCurrentUser;
         List<String> commentList = new ArrayList<>();
+        LocalDateTime createdAt;
 
         Post(String username, String content, String timeAgo, int likes, int comments, String tag) {
             this.username = username;
@@ -54,6 +74,32 @@ public class CommunityView extends VBox {
             this.likes = likes;
             this.comments = comments;
             this.tag = tag;
+            this.createdAt = LocalDateTime.now();
+        }
+
+        Post(Long id, String username, String content, String tag, LocalDateTime createdAt) {
+            this.id = id;
+            this.username = username;
+            this.content = content;
+            this.tag = tag;
+            this.createdAt = createdAt;
+            this.timeAgo = formatTimeAgo(createdAt);
+            this.likes = 0;
+            this.comments = 0;
+            this.likedByCurrentUser = false;
+            this.commentList = new ArrayList<>();
+        }
+
+        private String formatTimeAgo(LocalDateTime time) {
+            java.time.Duration duration = java.time.Duration.between(time, LocalDateTime.now());
+            long minutes = duration.toMinutes();
+            if (minutes < 1) return "Baru saja";
+            if (minutes < 60) return minutes + " menit yang lalu";
+            long hours = minutes / 60;
+            if (hours < 24) return hours + " jam yang lalu";
+            long days = hours / 24;
+            if (days < 7) return days + " hari yang lalu";
+            return time.format(DateTimeFormatter.ofPattern("dd MMM yyyy", new Locale("id", "ID")));
         }
     }
 
@@ -73,9 +119,6 @@ public class CommunityView extends VBox {
         feedBox = new VBox(16);
         feedBox.setPadding(new Insets(0, 30, 20, 30));
 
-        loadSamplePosts();
-        refreshFeed();
-
         Button btnShare = createShareStoryButton();
         HBox shareBtnBox = new HBox(btnShare);
         shareBtnBox.setPadding(new Insets(4, 30, 30, 30));
@@ -91,9 +134,138 @@ public class CommunityView extends VBox {
         mainScroll.setContent(contentWrapper);
         this.getChildren().add(mainScroll);
         VBox.setVgrow(mainScroll, Priority.ALWAYS);
+
+        // Load data dari backend
+        loadPostsFromBackend();
     }
 
-    // ── Reset ────────────────────────────────────────────────────────────────────
+    // ==================== BACKEND CONNECTION ====================
+
+    private void loadPostsFromBackend() {
+        // Tampilkan loading indicator
+        feedBox.getChildren().clear();
+        Label loadingLabel = new Label("🔄 Memuat cerita dari komunitas...");
+        loadingLabel.setStyle("-fx-text-fill: " + COLOR_SUBTEXT + "; -fx-font-size: 14px;");
+        feedBox.getChildren().add(loadingLabel);
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(BASE_URL))
+                .header("Accept", "application/json")
+                .GET()
+                .build();
+
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() == 200) {
+                    return response.body();
+                }
+                return null;
+            } catch (Exception e) {
+                System.out.println("Backend offline, menggunakan data dummy: " + e.getMessage());
+                return null;
+            }
+        }).thenAcceptAsync(json -> {
+            if (json != null && !json.isEmpty()) {
+                try {
+                    JsonNode root = objectMapper.readTree(json);
+                    posts.clear();
+
+                    for (JsonNode node : root) {
+                        String tag = extractTagFromContent(node.path("content").asText());
+                        Post post = new Post(
+                                node.path("id").asLong(0),
+                                node.path("senderName").asText("Pengguna Anonim"),
+                                node.path("content").asText(),
+                                tag,
+                                parseDateTime(node.path("createdAt").asText())
+                        );
+                        posts.add(post);
+                    }
+                    System.out.println("Data berhasil dimuat dari backend: " + posts.size() + " postingan");
+                } catch (Exception e) {
+                    System.out.println("Error parsing JSON, menggunakan data dummy: " + e.getMessage());
+                    loadDummyData();
+                }
+            } else {
+                loadDummyData();
+            }
+            refreshFeed();
+        }, javafx.application.Platform::runLater);
+    }
+
+    private void loadDummyData() {
+        posts.clear();
+        posts.add(new Post("🌱 Pengguna Anonim",
+                "Hari ini aku berhasil bangun dari tempat tidur meski berat sekali. Rasanya seperti kemenangan kecil yang luar biasa. Terima kasih untuk semua yang selalu menyemangati di sini 🌱",
+                "2 jam yang lalu", 24, 8, "Pencapaian"));
+        posts.add(new Post("🧘 Pengguna Anonim",
+                "Baru saja menyelesaikan sesi meditasi pertama setelah sekian lama. Rasanya lega sekali, seperti napas panjang setelah lama menahan. Highly recommended buat yang belum coba!",
+                "5 jam yang lalu", 42, 12, "Meditasi"));
+        posts.add(new Post("💚 Pengguna Anonim",
+                "Terima kasih untuk semua yang telah memberikan dukungan di sini. Membaca cerita kalian membuatku merasa tidak sendirian dalam perjalanan ini 💚",
+                "1 hari yang lalu", 67, 15, "Dukungan"));
+        posts.add(new Post("🌟 Pengguna Anonim",
+                "Kadang aku merasa overwhelmed dengan semua tuntutan hidup. Tapi aku ingat, aku tidak harus sempurna. Cukup melangkah satu langkah kecil setiap hari.",
+                "2 hari yang lalu", 89, 21, "Motivasi"));
+        posts.add(new Post("💬 Pengguna Anonim",
+                "Mau curhat, minggu ini lumayan berat. Tapi aku berhasil minta bantuan ke orang terdekat untuk pertama kalinya. Meski susah, ternyata jauh lebih lega.",
+                "3 hari yang lalu", 55, 18, "Curhat"));
+        System.out.println("Menggunakan data dummy: " + posts.size() + " postingan");
+    }
+
+    private void savePostToBackend(String content, String tag) {
+        String senderName = UserSession.isLoggedIn() ? UserSession.getLoggedInName() : "Pengguna Anonim";
+
+        ObjectNode postJson = objectMapper.createObjectNode();
+        postJson.put("senderName", senderName);
+        postJson.put("content", tag + ": " + content);
+
+        try {
+            String json = objectMapper.writeValueAsString(postJson);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(BASE_URL))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(json))
+                    .build();
+
+            CompletableFuture.runAsync(() -> {
+                try {
+                    HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    if (response.statusCode() == 200 || response.statusCode() == 201) {
+                        System.out.println("Post saved successfully to backend!");
+                        javafx.application.Platform.runLater(this::loadPostsFromBackend);
+                    } else {
+                        System.out.println("Failed to save post: " + response.statusCode());
+                    }
+                } catch (Exception e) {
+                    System.out.println("Error saving post to backend: " + e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            System.out.println("Error creating JSON: " + e.getMessage());
+        }
+    }
+
+    private String extractTagFromContent(String content) {
+        for (String tag : TAGS) {
+            if (content.startsWith(tag + ": ")) {
+                return tag;
+            }
+        }
+        return "Curhat";
+    }
+
+    private LocalDateTime parseDateTime(String dateTimeStr) {
+        try {
+            return LocalDateTime.parse(dateTimeStr);
+        } catch (Exception e) {
+            return LocalDateTime.now();
+        }
+    }
+
+    // ==================== UI METHODS ====================
 
     private void resetToMainCommunity() {
         searchQuery = "";
@@ -101,7 +273,7 @@ public class CommunityView extends VBox {
         activeFilter = "Semua";
         refreshAllTagButtons();
         refreshFeed();
-        showToast("✅ Kembali ke halaman utama komunitas");
+        updateBackButtonVisibility();
     }
 
     private void refreshAllTagButtons() {
@@ -114,53 +286,48 @@ public class CommunityView extends VBox {
         }
     }
 
-    // ── Search section ───────────────────────────────────────────────────────────
+    private void updateBackButtonVisibility() {
+        boolean hasSearch = !searchQuery.isEmpty();
+        boolean hasActiveFilter = !activeFilter.equals("Semua");
+        boolean isDefaultState = !hasSearch && !hasActiveFilter;
+        if (backButton != null) {
+            backButton.setVisible(!isDefaultState);
+            backButton.setManaged(!isDefaultState);
+        }
+    }
 
     private VBox createSearchSection() {
         VBox wrapper = new VBox();
         wrapper.setPadding(new Insets(20, 30, 8, 30));
 
-        HBox topContainer = new HBox(12);
-        topContainer.setAlignment(Pos.CENTER_LEFT);
-
-        // ── Back button - HANYA ICON, lebih gendut ────────────────────────────────
-        Button backButton = new Button("←");
-        // Font bold dan size lebih besar untuk icon yang lebih gendut
-        backButton.setStyle(
-                "-fx-background-color: " + COLOR_PRIMARY + ";" +
-                        "-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 24px;" +
-                        "-fx-padding: 8 16 8 16; -fx-background-radius: 30; -fx-cursor: hand;" +
-                        "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 4, 0, 0, 2);"
+        searchBox = new HBox(10);
+        searchBox.setAlignment(Pos.CENTER_LEFT);
+        searchBox.setPadding(new Insets(8, 16, 8, 16));
+        searchBox.setStyle(
+                "-fx-background-color: white; -fx-background-radius: 30;" +
+                        "-fx-border-color: " + COLOR_BORDER + "; -fx-border-radius: 30;"
         );
+        HBox.setHgrow(searchBox, Priority.ALWAYS);
 
-        // Hover effect
+        backButton = new Button("←");
+        backButton.setStyle(
+                "-fx-background-color: transparent; -fx-text-fill: " + COLOR_PRIMARY + ";" +
+                        "-fx-font-weight: bold; -fx-font-size: 20px; -fx-padding: 4 8 4 8; -fx-cursor: hand;"
+        );
         backButton.setOnMouseEntered(e -> backButton.setStyle(
-                "-fx-background-color: " + COLOR_PRIMARY_D + ";" +
-                        "-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 24px;" +
-                        "-fx-padding: 8 16 8 16; -fx-background-radius: 30; -fx-cursor: hand;" +
-                        "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.15), 4, 0, 0, 2);"
+                "-fx-background-color: " + COLOR_PRIMARY_L + "; -fx-text-fill: " + COLOR_PRIMARY_D + ";" +
+                        "-fx-font-weight: bold; -fx-font-size: 20px; -fx-padding: 4 8 4 8; -fx-cursor: hand; -fx-background-radius: 20;"
         ));
         backButton.setOnMouseExited(e -> backButton.setStyle(
-                "-fx-background-color: " + COLOR_PRIMARY + ";" +
-                        "-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 24px;" +
-                        "-fx-padding: 8 16 8 16; -fx-background-radius: 30; -fx-cursor: hand;" +
-                        "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 4, 0, 0, 2);"
+                "-fx-background-color: transparent; -fx-text-fill: " + COLOR_PRIMARY + ";" +
+                        "-fx-font-weight: bold; -fx-font-size: 20px; -fx-padding: 4 8 4 8; -fx-cursor: hand;"
         ));
-
         Tooltip backTooltip = new Tooltip("Kembali ke halaman utama");
         backTooltip.setStyle("-fx-font-size: 11px;");
         backButton.setTooltip(backTooltip);
         backButton.setOnAction(e -> resetToMainCommunity());
-
-        // ── Search box ───────────────────────────────────────────────────────────
-        HBox searchBox = new HBox(10);
-        searchBox.setAlignment(Pos.CENTER_LEFT);
-        searchBox.setPadding(new Insets(10, 16, 10, 16));
-        searchBox.setStyle(
-                "-fx-background-color: white; -fx-background-radius: 12;" +
-                        "-fx-border-color: " + COLOR_BORDER + "; -fx-border-radius: 12;"
-        );
-        HBox.setHgrow(searchBox, Priority.ALWAYS);
+        backButton.setVisible(false);
+        backButton.setManaged(false);
 
         Label icon = new Label("🔍");
         icon.setStyle("-fx-font-size: 14px;");
@@ -189,17 +356,15 @@ public class CommunityView extends VBox {
         Runnable doSearch = () -> {
             searchQuery = searchField.getText().trim().toLowerCase();
             refreshFeed();
+            updateBackButtonVisibility();
         };
         searchButton.setOnAction(e -> doSearch.run());
         searchField.setOnAction(e -> doSearch.run());
 
-        searchBox.getChildren().addAll(icon, searchField, searchButton);
-        topContainer.getChildren().addAll(backButton, searchBox);
-        wrapper.getChildren().add(topContainer);
+        searchBox.getChildren().addAll(backButton, icon, searchField, searchButton);
+        wrapper.getChildren().add(searchBox);
         return wrapper;
     }
-
-    // ── Filter section ───────────────────────────────────────────────────────────
 
     private VBox createFilterSection() {
         VBox wrapper = new VBox(8);
@@ -220,6 +385,7 @@ public class CommunityView extends VBox {
                 activeFilter = tag;
                 refreshAllTagButtons();
                 refreshFeed();
+                updateBackButtonVisibility();
             });
             tagContainer.getChildren().add(btn);
         }
@@ -229,41 +395,20 @@ public class CommunityView extends VBox {
     }
 
     private void applyTagStyle(Button btn, boolean active, String color) {
-        btn.setStyle(active
-                ? "-fx-background-color: " + color + "; -fx-text-fill: white; -fx-background-radius: 20;" +
-                "-fx-font-size: 12px; -fx-font-weight: bold; -fx-padding: 6 14 6 14; -fx-cursor: hand;" +
-                "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.15), 4, 0, 0, 2);"
-                : "-fx-background-color: white; -fx-text-fill: " + COLOR_SUBTEXT + "; -fx-background-radius: 20;" +
-                "-fx-border-color: " + COLOR_BORDER + "; -fx-border-radius: 20;" +
-                "-fx-font-size: 12px; -fx-padding: 6 14 6 14; -fx-cursor: hand;"
-        );
+        if (active) {
+            btn.setStyle("-fx-background-color: " + color + "; -fx-text-fill: white; -fx-background-radius: 20;" +
+                    "-fx-font-size: 12px; -fx-font-weight: bold; -fx-padding: 6 14 6 14; -fx-cursor: hand;" +
+                    "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.15), 4, 0, 0, 2);");
+        } else {
+            btn.setStyle("-fx-background-color: white; -fx-text-fill: " + COLOR_SUBTEXT + "; -fx-background-radius: 20;" +
+                    "-fx-border-color: " + COLOR_BORDER + "; -fx-border-radius: 20;" +
+                    "-fx-font-size: 12px; -fx-padding: 6 14 6 14; -fx-cursor: hand;");
+        }
     }
-
-    // ── Sample data ──────────────────────────────────────────────────────────────
-
-    private void loadSamplePosts() {
-        posts.clear();
-        posts.add(new Post("🌱 Pengguna Anonim",
-                "Hari ini aku berhasil bangun dari tempat tidur meski berat sekali. Rasanya seperti kemenangan kecil yang luar biasa. Terima kasih untuk semua yang selalu menyemangati di sini 🌱",
-                "2 jam yang lalu", 24, 8, "Pencapaian"));
-        posts.add(new Post("🧘 Pengguna Anonim",
-                "Baru saja menyelesaikan sesi meditasi pertama setelah sekian lama. Rasanya lega sekali, seperti napas panjang setelah lama menahan. Highly recommended buat yang belum coba!",
-                "5 jam yang lalu", 42, 12, "Meditasi"));
-        posts.add(new Post("💚 Pengguna Anonim",
-                "Terima kasih untuk semua yang telah memberikan dukungan di sini. Membaca cerita kalian membuatku merasa tidak sendirian dalam perjalanan ini 💚",
-                "1 hari yang lalu", 67, 15, "Dukungan"));
-        posts.add(new Post("🌟 Pengguna Anonim",
-                "Kadang aku merasa overwhelmed dengan semua tuntutan hidup. Tapi aku ingat, aku tidak harus sempurna. Cukup melangkah satu langkah kecil setiap hari.",
-                "2 hari yang lalu", 89, 21, "Motivasi"));
-        posts.add(new Post("💬 Pengguna Anonim",
-                "Mau curhat, minggu ini lumayan berat. Tapi aku berhasil minta bantuan ke orang terdekat untuk pertama kalinya. Meski susah, ternyata jauh lebih lega.",
-                "3 hari yang lalu", 55, 18, "Curhat"));
-    }
-
-    // ── Feed ─────────────────────────────────────────────────────────────────────
 
     private void refreshFeed() {
         feedBox.getChildren().clear();
+
         List<Post> filtered = posts.stream()
                 .filter(p -> activeFilter.equals("Semua") || p.tag.equals(activeFilter))
                 .filter(p -> searchQuery.isEmpty()
@@ -294,8 +439,6 @@ public class CommunityView extends VBox {
         return box;
     }
 
-    // ── Post card ─────────────────────────────────────────────────────────────────
-
     private VBox createPostCard(Post post) {
         VBox card = new VBox(0);
         card.setStyle(
@@ -304,12 +447,10 @@ public class CommunityView extends VBox {
         );
         card.setMaxWidth(Double.MAX_VALUE);
 
-        String tagColor = getTagColor(post.tag);
-
         HBox accent = new HBox();
         accent.setPrefHeight(5);
         accent.setMaxWidth(Double.MAX_VALUE);
-        accent.setStyle("-fx-background-color: " + tagColor + "; -fx-background-radius: 20 20 0 0;");
+        accent.setStyle("-fx-background-color: " + COLOR_PRIMARY + "; -fx-background-radius: 20 20 0 0;");
 
         VBox main = new VBox(14);
         main.setPadding(new Insets(20, 20, 18, 20));
@@ -331,6 +472,7 @@ public class CommunityView extends VBox {
         uname.setStyle("-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill: " + COLOR_DARK + ";");
 
         Label tagBadge = new Label(post.tag);
+        String tagColor = getTagColor(post.tag);
         tagBadge.setStyle(
                 "-fx-background-color: " + tagColor + "22; -fx-text-fill: " + tagColor + ";" +
                         "-fx-background-radius: 20; -fx-padding: 3 10 3 10;" +
@@ -351,6 +493,7 @@ public class CommunityView extends VBox {
         content.setStyle("-fx-text-fill: " + COLOR_TEXT + "; -fx-font-size: 14px; -fx-line-spacing: 5;");
 
         Separator sep = new Separator();
+        sep.setStyle("-fx-background-color: " + COLOR_PRIMARY + ";");
 
         HBox actions = new HBox(16);
         actions.setAlignment(Pos.CENTER_LEFT);
@@ -397,12 +540,13 @@ public class CommunityView extends VBox {
 
     private Button buildLikeButton(Post post) {
         Button btn = new Button(post.likedByCurrentUser ? "❤️ " + post.likes : "🤍 " + post.likes);
-        btn.setStyle(
-                (post.likedByCurrentUser
-                        ? "-fx-background-color: " + COLOR_RED_L + "; -fx-text-fill: " + COLOR_RED + ";"
-                        : "-fx-background-color: transparent; -fx-text-fill: " + COLOR_SUBTEXT + ";") +
-                        "-fx-font-size: 13px; -fx-padding: 6 12 6 12; -fx-cursor: hand; -fx-background-radius: 20;"
-        );
+        if (post.likedByCurrentUser) {
+            btn.setStyle("-fx-background-color: " + COLOR_RED_L + "; -fx-text-fill: " + COLOR_RED + ";" +
+                    "-fx-font-size: 13px; -fx-padding: 6 12 6 12; -fx-cursor: hand; -fx-background-radius: 20;");
+        } else {
+            btn.setStyle("-fx-background-color: transparent; -fx-text-fill: " + COLOR_SUBTEXT + ";" +
+                    "-fx-font-size: 13px; -fx-padding: 6 12 6 12; -fx-cursor: hand; -fx-background-radius: 20;");
+        }
         btn.setOnAction(e -> {
             post.likedByCurrentUser = !post.likedByCurrentUser;
             post.likes += post.likedByCurrentUser ? 1 : -1;
@@ -410,8 +554,6 @@ public class CommunityView extends VBox {
         });
         return btn;
     }
-
-    // ── Inline comments ───────────────────────────────────────────────────────────
 
     private void rebuildComments(Post post, VBox container) {
         container.getChildren().clear();
@@ -488,8 +630,6 @@ public class CommunityView extends VBox {
         container.getChildren().add(inputRow);
     }
 
-    // ── Share story button ────────────────────────────────────────────────────────
-
     private Button createShareStoryButton() {
         Button btn = new Button("✍️  Bagikan Cerita Anda");
         String base =
@@ -508,8 +648,6 @@ public class CommunityView extends VBox {
         btn.setOnAction(e -> showShareStoryDialog());
         return btn;
     }
-
-    // ── Share story dialog ────────────────────────────────────────────────────────
 
     private void showShareStoryDialog() {
         Dialog<Post> dialog = new Dialog<>();
@@ -581,6 +719,7 @@ public class CommunityView extends VBox {
                             "-fx-padding: 7 16 7 16; -fx-cursor: hand;" +
                             "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.15), 4, 0, 0, 2);";
             tb.setStyle(unsel);
+            int finalI = i;
             tb.selectedProperty().addListener((obs, was, is) -> tb.setStyle(is ? sel : unsel));
             tagRow.getChildren().add(tb);
         }
@@ -612,8 +751,8 @@ public class CommunityView extends VBox {
         Label charCounter = new Label("0 / 500");
         charCounter.setStyle("-fx-text-fill: " + COLOR_SUBTEXT + "; -fx-font-size: 11px;");
         storyArea.textProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal.length() > 500) storyArea.setText(oldVal);
-            int count = storyArea.getText().length();
+            if (newVal != null && newVal.length() > 500) storyArea.setText(oldVal);
+            int count = storyArea.getText() != null ? storyArea.getText().length() : 0;
             charCounter.setText(count + " / 500");
             charCounter.setStyle("-fx-font-size: 11px; -fx-text-fill: " +
                     (count > 450 ? COLOR_RED : COLOR_SUBTEXT) + ";");
@@ -641,7 +780,7 @@ public class CommunityView extends VBox {
         dialog.getDialogPane().setContent(content);
 
         dialog.setResultConverter(db -> {
-            if (db == btnSubmit && !storyArea.getText().trim().isEmpty()) {
+            if (db == btnSubmit && storyArea.getText() != null && !storyArea.getText().trim().isEmpty()) {
                 Toggle sel = tagGroup.getSelectedToggle();
                 String chosenTag = sel != null ? ((ToggleButton) sel).getText() : "Curhat";
                 return new Post(getAvatarEmoji(posts.size()) + " Pengguna Anonim",
@@ -651,13 +790,15 @@ public class CommunityView extends VBox {
         });
 
         dialog.showAndWait().ifPresent(newPost -> {
+            // Save to backend first
+            savePostToBackend(newPost.content, newPost.tag);
+            // Also add to local list for immediate display
             posts.add(0, newPost);
             refreshFeed();
             showToast("✨ Cerita Anda berhasil dibagikan!");
+            DailyMissionView.completeMissionExternally(2);
         });
     }
-
-    // ── Toast ─────────────────────────────────────────────────────────────────────
 
     private void showToast(String message) {
         Alert toast = new Alert(Alert.AlertType.INFORMATION);
@@ -667,8 +808,6 @@ public class CommunityView extends VBox {
         new Timeline(new KeyFrame(Duration.millis(2000), e -> toast.close())).play();
         toast.show();
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────────
 
     private String getTagColor(String tag) {
         for (int i = 0; i < TAGS.length; i++) {
