@@ -1,6 +1,8 @@
 package com.CareVibe.view;
 
 import com.CareVibe.model.UserSession;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
@@ -10,11 +12,18 @@ import javafx.scene.shape.Circle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 
 public class ConsultationView extends VBox {
 
@@ -27,6 +36,17 @@ public class ConsultationView extends VBox {
     private static final String GRAY_TEXT      = "#6B7280";
     private static final String DARK_TEXT      = "#1F2937";
     private static final String BORDER_LIGHT   = "#D1FAE5";
+
+    // Backend URL
+    private static final String BASE_URL = "http://localhost:8080/api";
+    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private Label coinValueLabel;
+    private VBox psychologistContainer;
+    private List<PsychologistData> psychologistList = new ArrayList<>();
+    private String activeFilter = "Semua";
+    private ToggleGroup filterGroup;
 
     public ConsultationView() {
         this.setStyle("-fx-background-color: " + BG_PAGE + "; -fx-padding: 30;");
@@ -46,11 +66,20 @@ public class ConsultationView extends VBox {
                 createHeaderSection(),
                 createCoinBannerCard(),
                 createFilterBar(),
-                createPsychologistCards()
+                createPsychologistContainer()
         );
 
         scrollPane.setContent(content);
         this.getChildren().add(scrollPane);
+
+        // Load data dari backend (dengan fallback ke data dummy)
+        loadPsychologistsFromBackend();
+    }
+
+    private VBox createPsychologistContainer() {
+        psychologistContainer = new VBox(16);
+        psychologistContainer.setAlignment(Pos.TOP_LEFT);
+        return psychologistContainer;
     }
 
     private VBox createHeaderSection() {
@@ -94,11 +123,14 @@ public class ConsultationView extends VBox {
         Label coinTitle = new Label("Koin Kamu");
         coinTitle.setStyle("-fx-text-fill: " + GRAY_TEXT + "; -fx-font-size: 12px;");
 
-        int currentCoins = UserSession.getPoints();
-        Label coinValue = new Label(currentCoins + " Koin");
-        coinValue.setFont(Font.font("System", FontWeight.BOLD, 22));
-        coinValue.setStyle("-fx-text-fill: " + GOLD_COIN + ";");
-        coinInfo.getChildren().addAll(coinTitle, coinValue);
+        coinValueLabel = new Label(UserSession.getPoints() + " Koin");
+        coinValueLabel.setFont(Font.font("System", FontWeight.BOLD, 22));
+        coinValueLabel.setStyle("-fx-text-fill: " + GOLD_COIN + ";");
+        coinInfo.getChildren().addAll(coinTitle, coinValueLabel);
+
+        UserSession.setOnPointsChanged(() -> {
+            coinValueLabel.setText(UserSession.getPoints() + " Koin");
+        });
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -122,11 +154,11 @@ public class ConsultationView extends VBox {
         bar.setAlignment(Pos.CENTER_LEFT);
 
         String[] filters = {"Semua", "Klinis", "Anak & Remaja", "Keluarga", "Trauma"};
-        ToggleGroup tg = new ToggleGroup();
+        filterGroup = new ToggleGroup();
 
         for (int i = 0; i < filters.length; i++) {
             ToggleButton btn = new ToggleButton(filters[i]);
-            btn.setToggleGroup(tg);
+            btn.setToggleGroup(filterGroup);
             if (i == 0) btn.setSelected(true);
 
             String baseStyle =
@@ -140,11 +172,14 @@ public class ConsultationView extends VBox {
                     "-fx-text-fill: " + GRAY_TEXT + ";" +
                     "-fx-border-color: #E5E7EB; -fx-border-radius: 20; -fx-border-width: 1;");
 
+            int filterIndex = i;
             btn.selectedProperty().addListener((obs, wasSelected, isSelected) -> {
                 if (isSelected) {
                     btn.setStyle(baseStyle +
                             "-fx-background-color: " + GREEN_PRIMARY + ";" +
                             "-fx-text-fill: white;");
+                    activeFilter = filters[filterIndex];
+                    filterPsychologists();
                 } else {
                     btn.setStyle(baseStyle +
                             "-fx-background-color: " + WHITE + ";" +
@@ -158,12 +193,73 @@ public class ConsultationView extends VBox {
         return bar;
     }
 
-    private VBox createPsychologistCards() {
-        VBox container = new VBox(16);
+    private void loadPsychologistsFromBackend() {
+        // Tampilkan loading indicator
+        psychologistContainer.getChildren().clear();
+        Label loadingLabel = new Label("🔄 Memuat data psikolog...");
+        loadingLabel.setStyle("-fx-text-fill: " + GRAY_TEXT + "; -fx-font-size: 14px;");
+        psychologistContainer.getChildren().add(loadingLabel);
 
-        List<PsychologistData> list = List.of(
+        String url = BASE_URL + "/psychologists";
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Accept", "application/json")
+                .GET()
+                .build();
+
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() == 200) {
+                    return response.body();
+                }
+                return null;
+            } catch (Exception e) {
+                System.out.println("Backend offline, menggunakan data dummy: " + e.getMessage());
+                return null;
+            }
+        }).thenAcceptAsync(json -> {
+            if (json != null && !json.isEmpty()) {
+                try {
+                    JsonNode root = objectMapper.readTree(json);
+                    psychologistList.clear();
+
+                    for (JsonNode node : root) {
+                        PsychologistData data = new PsychologistData(
+                                node.path("id").asLong(0),
+                                node.path("name").asText("Psikolog"),
+                                node.path("title").asText("Psikolog Profesional"),
+                                node.path("specialization").asText("Konsultasi Umum"),
+                                node.path("rating").asDouble(4.5),
+                                node.path("consultCount").asInt(0),
+                                getAvatarByIndex(psychologistList.size()),
+                                getColorByIndex(psychologistList.size()),
+                                node.path("pricePerSession").asLong(150000),
+                                List.of("Senin", "Rabu", "Jumat"),
+                                node.path("description").asText("Psikolog profesional yang siap membantu Anda."),
+                                List.of("💬 Chat", "📞 Telepon", "📹 Video Call"),
+                                node.path("online").asBoolean(true)
+                        );
+                        psychologistList.add(data);
+                    }
+                    System.out.println("Data berhasil dimuat dari backend: " + psychologistList.size() + " psikolog");
+                } catch (Exception e) {
+                    System.out.println("Error parsing JSON, menggunakan data dummy: " + e.getMessage());
+                    loadDummyData();
+                }
+            } else {
+                loadDummyData();
+            }
+            filterPsychologists();
+        }, javafx.application.Platform::runLater);
+    }
+
+    private void loadDummyData() {
+        psychologistList.clear();
+        psychologistList.addAll(List.of(
                 new PsychologistData(
-                        "Dr. Sari Indah, M.Psi.",
+                        1L, "Dr. Sari Indah, M.Psi.",
                         "Psikolog Klinis",
                         "Depresi, Kecemasan, dan Gangguan Mood",
                         4.9, 1200, "👩‍⚕️", "#EC4899",
@@ -173,7 +269,7 @@ public class ConsultationView extends VBox {
                         true
                 ),
                 new PsychologistData(
-                        "Dr. Andi Pratama, M.Psi.",
+                        2L, "Dr. Andi Pratama, M.Psi.",
                         "Psikolog Klinis",
                         "Trauma, PTSD, dan Konseling Keluarga",
                         4.8, 980, "👨‍⚕️", "#3B82F6",
@@ -183,7 +279,7 @@ public class ConsultationView extends VBox {
                         false
                 ),
                 new PsychologistData(
-                        "Dr. Maya Sari, M.Psi., Psikolog",
+                        3L, "Dr. Maya Sari, M.Psi., Psikolog",
                         "Psikolog Anak & Remaja",
                         "Masalah Perkembangan, ADHD, dan Bullying",
                         4.9, 1500, "👩‍⚕️", "#8B5CF6",
@@ -193,7 +289,7 @@ public class ConsultationView extends VBox {
                         true
                 ),
                 new PsychologistData(
-                        "Dr. Budi Santoso, M.Psi.",
+                        4L, "Dr. Budi Santoso, M.Psi.",
                         "Psikolog Klinis & Konselor Keluarga",
                         "Konflik Pernikahan, Parenting, dan Komunikasi",
                         4.7, 760, "👨‍⚕️", "#F97316",
@@ -202,12 +298,38 @@ public class ConsultationView extends VBox {
                         List.of("💬 Chat", "📞 Telepon", "📹 Video Call"),
                         false
                 )
-        );
+        ));
+        System.out.println("Menggunakan data dummy: " + psychologistList.size() + " psikolog");
+    }
 
-        for (PsychologistData data : list) {
-            container.getChildren().add(createPsychologistCard(data));
+    private void filterPsychologists() {
+        psychologistContainer.getChildren().clear();
+
+        List<PsychologistData> filtered = psychologistList.stream()
+                .filter(p -> activeFilter.equals("Semua") ||
+                        p.specialization.toLowerCase().contains(activeFilter.toLowerCase()) ||
+                        p.title.toLowerCase().contains(activeFilter.toLowerCase()))
+                .toList();
+
+        if (filtered.isEmpty()) {
+            Label emptyLabel = new Label("Tidak ada psikolog yang ditemukan.");
+            emptyLabel.setStyle("-fx-text-fill: " + GRAY_TEXT + "; -fx-font-size: 14px;");
+            psychologistContainer.getChildren().add(emptyLabel);
+        } else {
+            for (PsychologistData data : filtered) {
+                psychologistContainer.getChildren().add(createPsychologistCard(data));
+            }
         }
-        return container;
+    }
+
+    private String getAvatarByIndex(int index) {
+        String[] avatars = {"👩‍⚕️", "👨‍⚕️", "👩‍⚕️", "👨‍⚕️", "👩‍⚕️"};
+        return avatars[index % avatars.length];
+    }
+
+    private String getColorByIndex(int index) {
+        String[] colors = {"#EC4899", "#3B82F6", "#8B5CF6", "#F97316", "#10B981"};
+        return colors[index % colors.length];
     }
 
     private VBox createPsychologistCard(PsychologistData data) {
@@ -367,6 +489,41 @@ public class ConsultationView extends VBox {
 
         card.getChildren().addAll(topRow, descLbl, specRow, scheduleRow, methodRow, sep, footer);
         return card;
+    }
+
+    private void saveBookingToBackend(PsychologistData data, LocalDateTime appointmentTime, String notes) {
+        String url = BASE_URL + "/consultations";
+        String userEmail = UserSession.getLoggedInUser();
+
+        String safeNotes = (notes != null ? notes : "").replace("\"", "\\\"").replace("\n", " ");
+        String json = "{"
+                + "\"userEmail\":\"" + userEmail + "\","
+                + "\"psychologistId\":" + data.id + ","
+                + "\"appointmentTime\":\"" + appointmentTime.toString() + "\","
+                + "\"status\":\"SCHEDULED\","
+                + "\"notes\":\"" + safeNotes + "\""
+                + "}";
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .build();
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                HttpResponse<String> response = httpClient.send(
+                        request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() == 200 || response.statusCode() == 201) {
+                    System.out.println("✅ Booking tersimpan ke database!");
+                } else {
+                    System.out.println("❌ Gagal simpan booking: "
+                            + response.statusCode() + " - " + response.body());
+                }
+            } catch (Exception e) {
+                System.out.println(" Error koneksi: " + e.getMessage());
+            }
+        });
     }
 
     private void showPaymentDialog(PsychologistData data) {
@@ -640,6 +797,11 @@ public class ConsultationView extends VBox {
                 String selectedMethod = ((ToggleButton) methodGroup.getSelectedToggle()).getText();
                 String selectedPm = ((ToggleButton) pmGroup.getSelectedToggle()).getText();
 
+                // Simpan ke backend
+                LocalDateTime appointmentDateTime = datePicker.getValue()
+                        .atTime(LocalDateTime.parse("2024-01-01T" + selectedTime + ":00").toLocalTime());
+                saveBookingToBackend(data, appointmentDateTime, noteArea.getText());
+
                 showSuccessDialog(data.name, selectedDate, selectedTime, selectedMethod, selectedPm,
                         data.pricePerSession, actualDisc, finalPrice, currentCoins > 0, coinsUsed);
             }
@@ -658,7 +820,6 @@ public class ConsultationView extends VBox {
         content.setAlignment(Pos.CENTER);
         content.setStyle("-fx-background-color: " + BG_PAGE + ";");
 
-        // Icon Success Circle
         StackPane iconContainer = new StackPane();
         Circle circleBg = new Circle(45);
         circleBg.setFill(Color.web("#10B98120"));
@@ -669,21 +830,17 @@ public class ConsultationView extends VBox {
         checkIcon.setStyle("-fx-text-fill: white;");
         iconContainer.getChildren().addAll(circleBg, circleInner, checkIcon);
 
-        // Title
         Label titleLabel = new Label("Pembayaran Berhasil!");
         titleLabel.setFont(Font.font("System", FontWeight.BOLD, 22));
         titleLabel.setStyle("-fx-text-fill: " + GREEN_DARK + ";");
 
-        // Subtitle
         Label subtitleLabel = new Label("Janji konsultasi berhasil dibuat");
         subtitleLabel.setStyle("-fx-text-fill: " + GRAY_TEXT + "; -fx-font-size: 14px;");
 
-        // Separator
         Separator sep = new Separator();
         sep.setStyle("-fx-background-color: #E5E7EB;");
         sep.setMaxWidth(350);
 
-        // Detail Card
         VBox detailCard = new VBox(12);
         detailCard.setStyle(
                 "-fx-background-color: white;" +
@@ -693,13 +850,11 @@ public class ConsultationView extends VBox {
         detailCard.setPadding(new Insets(16));
         detailCard.setMaxWidth(380);
 
-        // Detail rows
         detailCard.getChildren().add(createDetailRow("‍️ Psikolog", docName));
         detailCard.getChildren().add(createDetailRow(" Tanggal", date));
         detailCard.getChildren().add(createDetailRow(" Waktu", time));
         detailCard.getChildren().add(createDetailRow(" Metode", method));
 
-        // Separator dalam detail
         Separator detailSep = new Separator();
         detailSep.setStyle("-fx-background-color: #F3F4F6;");
         detailCard.getChildren().add(detailSep);
@@ -723,7 +878,6 @@ public class ConsultationView extends VBox {
 
         detailCard.getChildren().add(createDetailRow("Dibayar via", payMethod));
 
-        // Bonus Koin
         HBox bonusBox = new HBox(8);
         bonusBox.setAlignment(Pos.CENTER);
         bonusBox.setStyle(
@@ -737,12 +891,10 @@ public class ConsultationView extends VBox {
         bonusText.setStyle("-fx-text-fill: #D97706; -fx-font-size: 12px; -fx-font-weight: bold;");
         bonusBox.getChildren().addAll(bonusIcon, bonusText);
 
-        // Footer message
         Label footerMsg = new Label("Tim CareVibe akan menghubungi kamu untuk konfirmasi.\nSemoga lekas membaik! 💚");
         footerMsg.setStyle("-fx-text-fill: " + GRAY_TEXT + "; -fx-font-size: 12px;");
         footerMsg.setAlignment(Pos.CENTER);
 
-        // OK Button
         Button okButton = new Button("OK");
         okButton.setStyle(
                 "-fx-background-color: " + GREEN_PRIMARY + ";" +
@@ -771,7 +923,6 @@ public class ConsultationView extends VBox {
         dialog.getDialogPane().setPrefWidth(480);
         dialog.getDialogPane().setStyle("-fx-background-color: " + BG_PAGE + ";");
 
-        // Remove default buttons
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         Button closeButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.CLOSE);
         closeButton.setVisible(false);
@@ -858,6 +1009,7 @@ public class ConsultationView extends VBox {
     }
 
     private static class PsychologistData {
+        Long id;
         String name, title, specialization, avatar, color, description;
         double rating;
         int consultCount;
@@ -866,10 +1018,12 @@ public class ConsultationView extends VBox {
         List<String> methods;
         boolean online;
 
-        PsychologistData(String name, String title, String specialization,
+        // Constructor with ID (for backend data)
+        PsychologistData(Long id, String name, String title, String specialization,
                          double rating, int consultCount, String avatar, String color,
                          long pricePerSession, List<String> availableDays,
                          String description, List<String> methods, boolean online) {
+            this.id = id;
             this.name = name;
             this.title = title;
             this.specialization = specialization;
@@ -882,6 +1036,15 @@ public class ConsultationView extends VBox {
             this.description = description;
             this.methods = methods;
             this.online = online;
+        }
+
+        // Constructor without ID (for dummy data)
+        PsychologistData(String name, String title, String specialization,
+                         double rating, int consultCount, String avatar, String color,
+                         long pricePerSession, List<String> availableDays,
+                         String description, List<String> methods, boolean online) {
+            this(null, name, title, specialization, rating, consultCount, avatar, color,
+                    pricePerSession, availableDays, description, methods, online);
         }
     }
 }
