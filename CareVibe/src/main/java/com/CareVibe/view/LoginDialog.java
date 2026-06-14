@@ -1,256 +1,227 @@
 package com.CareVibe.view;
 
 import com.CareVibe.model.UserSession;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
-import javafx.scene.shape.Circle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
-import javafx.stage.StageStyle;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
-public class LoginDialog {
+public class LoginDialog extends Stage {
 
-    private static Map<String, String> registeredUsers = new HashMap<>();
-    private static Map<String, String> userNames = new HashMap<>();
     private MainWindow mainWindow;
-    private Stage dialogStage;
     private String prefilledEmail = "";
     private String prefilledPassword = "";
 
-    static {
-        registeredUsers.put("user@example.com", "password123");
-        userNames.put("user@example.com", "User Example");
-        registeredUsers.put("test@vibecare.com", "test123");
-        userNames.put("test@vibecare.com", "Test User");
-    }
+    private static final String BASE_URL = "http://localhost:8080/api/auth";
+    private static final HttpClient httpClient = HttpClient.newHttpClient();
 
     public LoginDialog(MainWindow mainWindow) {
-        this(mainWindow, "", "");
+        this.mainWindow = mainWindow;
+        initModality(Modality.APPLICATION_MODAL);
+        setTitle("Masuk - VibeCare");
+        setResizable(false);
+        buildUI();
+        show();
     }
 
     public LoginDialog(MainWindow mainWindow, String email, String password) {
         this.mainWindow = mainWindow;
         this.prefilledEmail = email;
         this.prefilledPassword = password;
-        showLoginDialog();
+        initModality(Modality.APPLICATION_MODAL);
+        setTitle("Masuk - VibeCare");
+        setResizable(false);
+        buildUI();
+        showAndWait();
     }
 
-    private void showLoginDialog() {
-        dialogStage = new Stage();
-        dialogStage.initModality(Modality.APPLICATION_MODAL);
-        dialogStage.initStyle(StageStyle.UNDECORATED);
-        dialogStage.setTitle("Masuk ke VibeCare");
-
-        VBox root = new VBox(0);
+    private void buildUI() {
+        VBox root = new VBox(20);
+        root.setPadding(new Insets(40));
+        root.setAlignment(Pos.CENTER);
         root.setStyle("-fx-background-color: #F0FDF4;");
+        root.setPrefWidth(400);
 
-        HBox headerBar = new HBox();
-        headerBar.setAlignment(Pos.CENTER_RIGHT);
-        headerBar.setPadding(new Insets(15, 15, 0, 15));
+        Label title = new Label("Selamat Datang");
+        title.setFont(Font.font("System", FontWeight.BOLD, 26));
+        title.setStyle("-fx-text-fill: #064E3B;");
 
-        Button closeBtn = new Button("✕");
-        closeBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: #9CA3AF; -fx-font-size: 18px; -fx-cursor: hand;");
-        closeBtn.setOnAction(e -> dialogStage.close());
-        headerBar.getChildren().add(closeBtn);
+        Label subtitle = new Label("Masuk ke akun VibeCare Anda");
+        subtitle.setStyle("-fx-text-fill: #6B7280; -fx-font-size: 14px;");
 
-        ScrollPane scrollPane = new ScrollPane();
-        scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-background-color: transparent;");
-        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        VBox headerBox = new VBox(4, title, subtitle);
+        headerBox.setAlignment(Pos.CENTER);
 
-        VBox content = new VBox(20);
-        content.setAlignment(Pos.TOP_CENTER);
-        content.setPadding(new Insets(0, 40, 40, 40));
+        VBox formBox = new VBox(12);
+        formBox.setMaxWidth(320);
 
-        // Logo
-        VBox logoBox = new VBox(5);
-        logoBox.setAlignment(Pos.CENTER);
-        Circle logoCircle = new Circle(40);
-        logoCircle.setFill(Color.web("#10B981"));
-        Label logoIcon = new Label("🧘");
-        logoIcon.setFont(Font.font("System", 40));
-        StackPane logoStack = new StackPane();
-        logoStack.getChildren().addAll(logoCircle, logoIcon);
-        Label appName = new Label("VibeCare");
-        appName.setFont(Font.font("System", FontWeight.BOLD, 28));
-        appName.setStyle("-fx-text-fill: #065F46;");
-        Label tagline = new Label("Aplikasi Kesehatan Mental");
-        tagline.setStyle("-fx-text-fill: #6B7280; -fx-font-size: 12px;");
-        logoBox.getChildren().addAll(logoStack, appName, tagline);
-
-        Label title = new Label("Masuk ke Akun");
-        title.setFont(Font.font("System", FontWeight.BOLD, 20));
-        title.setStyle("-fx-text-fill: #1F2937;");
-
-        // Email
-        VBox emailBox = new VBox(5);
         Label emailLabel = new Label("Email");
-        emailLabel.setStyle("-fx-text-fill: #4B5563; -fx-font-size: 13px; -fx-font-weight: bold;");
+        emailLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #1F2937;");
         TextField emailField = new TextField();
-        emailField.setPromptText("email@contoh.com");
-        emailField.setStyle("-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #E5E7EB; -fx-border-radius: 12; -fx-padding: 12 15 12 15; -fx-font-size: 14px;");
+        emailField.setPromptText("contoh@email.com");
+        emailField.setStyle(
+                "-fx-background-color: white; -fx-border-color: #D1FAE5;" +
+                        "-fx-border-radius: 10; -fx-background-radius: 10;" +
+                        "-fx-padding: 10 14 10 14; -fx-font-size: 14px;"
+        );
         if (!prefilledEmail.isEmpty()) emailField.setText(prefilledEmail);
-        emailBox.getChildren().addAll(emailLabel, emailField);
 
-        // Password
-        VBox passBox = new VBox(5);
         Label passLabel = new Label("Password");
-        passLabel.setStyle("-fx-text-fill: #4B5563; -fx-font-size: 13px; -fx-font-weight: bold;");
+        passLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #1F2937;");
         PasswordField passField = new PasswordField();
-        passField.setPromptText("••••••••");
-        passField.setStyle("-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #E5E7EB; -fx-border-radius: 12; -fx-padding: 12 15 12 15; -fx-font-size: 14px;");
+        passField.setPromptText("Masukkan password");
+        passField.setStyle(
+                "-fx-background-color: white; -fx-border-color: #D1FAE5;" +
+                        "-fx-border-radius: 10; -fx-background-radius: 10;" +
+                        "-fx-padding: 10 14 10 14; -fx-font-size: 14px;"
+        );
         if (!prefilledPassword.isEmpty()) passField.setText(prefilledPassword);
-        passBox.getChildren().addAll(passLabel, passField);
 
-        Button loginBtn = new Button("Masuk");
-        loginBtn.setStyle("-fx-background-color: #10B981; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14px; -fx-padding: 12 20 12 20; -fx-background-radius: 30; -fx-cursor: hand;");
-        loginBtn.setMaxWidth(Double.MAX_VALUE);
-        loginBtn.setOnMouseEntered(e -> loginBtn.setStyle("-fx-background-color: #059669; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14px; -fx-padding: 12 20 12 20; -fx-background-radius: 30; -fx-cursor: hand;"));
-        loginBtn.setOnMouseExited(e -> loginBtn.setStyle("-fx-background-color: #10B981; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14px; -fx-padding: 12 20 12 20; -fx-background-radius: 30; -fx-cursor: hand;"));
-
-        HBox registerLink = new HBox(5);
-        registerLink.setAlignment(Pos.CENTER);
-        Label noAccountLabel = new Label("Belum punya akun?");
-        noAccountLabel.setStyle("-fx-text-fill: #6B7280; -fx-font-size: 13px;");
-        Hyperlink registerHyperlink = new Hyperlink("Daftar di sini");
-        registerHyperlink.setStyle("-fx-text-fill: #10B981; -fx-font-size: 13px; -fx-underline: true; -fx-cursor: hand;");
-        registerHyperlink.setOnAction(e -> { dialogStage.close(); new RegisterDialog(mainWindow); });
-        registerLink.getChildren().addAll(noAccountLabel, registerHyperlink);
-
-        Label errorLabel = new Label();
+        Label errorLabel = new Label("");
         errorLabel.setStyle("-fx-text-fill: #EF4444; -fx-font-size: 12px;");
+        errorLabel.setWrapText(true);
         errorLabel.setVisible(false);
 
-        loginBtn.setOnAction(e -> {
+        formBox.getChildren().addAll(emailLabel, emailField, passLabel, passField, errorLabel);
+
+        Button btnLogin = new Button("Masuk");
+        btnLogin.setMaxWidth(Double.MAX_VALUE);
+        btnLogin.setMinHeight(44);
+        btnLogin.setStyle(
+                "-fx-background-color: #10B981; -fx-text-fill: white;" +
+                        "-fx-font-weight: bold; -fx-font-size: 15px;" +
+                        "-fx-padding: 12 0 12 0; -fx-background-radius: 30; -fx-cursor: hand;"
+        );
+        btnLogin.setOnMouseEntered(e -> btnLogin.setStyle(
+                "-fx-background-color: #059669; -fx-text-fill: white;" +
+                        "-fx-font-weight: bold; -fx-font-size: 15px;" +
+                        "-fx-padding: 12 0 12 0; -fx-background-radius: 30; -fx-cursor: hand;"
+        ));
+        btnLogin.setOnMouseExited(e -> btnLogin.setStyle(
+                "-fx-background-color: #10B981; -fx-text-fill: white;" +
+                        "-fx-font-weight: bold; -fx-font-size: 15px;" +
+                        "-fx-padding: 12 0 12 0; -fx-background-radius: 30; -fx-cursor: hand;"
+        ));
+
+        // ✅ FIX: logika login ada di dalam setOnAction
+        btnLogin.setOnAction(e -> {
             String email = emailField.getText().trim();
             String password = passField.getText();
+
             if (email.isEmpty() || password.isEmpty()) {
-                errorLabel.setText("Email dan password harus diisi!");
+                errorLabel.setText("Email dan password tidak boleh kosong!");
                 errorLabel.setVisible(true);
                 return;
             }
-            if (registeredUsers.containsKey(email) && registeredUsers.get(email).equals(password)) {
-                String userName = userNames.getOrDefault(email, email.split("@")[0]);
-                UserSession.login(email, userName);
-                UserSession.addPoints(10);
-                dialogStage.close();
-                mainWindow.updateLoginStatus();
-                mainWindow.refreshPoints();
-                showSuccessDialog(userName, email);
-            } else {
-                errorLabel.setText("Email atau password salah!");
-                errorLabel.setVisible(true);
-            }
+
+            btnLogin.setDisable(true);
+            btnLogin.setText("Memproses...");
+            errorLabel.setVisible(false);
+
+            // HTTP call di background thread
+            new Thread(() -> {
+                try {
+                    String json = "{\"email\":\"" + email + "\",\"password\":\"" + password + "\"}";
+                    HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create(BASE_URL + "/login"))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(json))
+                            .build();
+
+                    HttpResponse<String> response = httpClient.send(request,
+                            HttpResponse.BodyHandlers.ofString());
+
+                    Platform.runLater(() -> {
+                        if (response.statusCode() == 200) {
+                            // Parse response JSON manual
+                            String body = response.body();
+                            String name = extractJson(body, "name");
+                            String roleStr = extractJson(body, "role");
+
+                            // Set session
+                            UserSession.login(email, name);
+
+                            // Set role
+                            if ("ROLE_ADMIN".equals(roleStr)) {
+                                UserSession.setLoggedInRole(UserSession.Role.ADMIN);
+                            } else if ("ROLE_PSIKOLOG".equals(roleStr)) {
+                                UserSession.setLoggedInRole(UserSession.Role.PSIKOLOG);
+                            } else {
+                                UserSession.setLoggedInRole(UserSession.Role.USER);
+                            }
+
+                            close();
+                            Stage stage = (Stage) mainWindow.getScene().getWindow();
+                            if (UserSession.getLoggedInRole() == UserSession.Role.ADMIN) {
+                                mainWindow.updateLoginStatus();
+                                stage.setScene(new Scene(new AdminDashboardView(mainWindow), 1200, 700));
+                            } else if (UserSession.getLoggedInRole() == UserSession.Role.PSIKOLOG) {
+                                mainWindow.updateLoginStatus();
+                                stage.setScene(new Scene(new PsikologDashboardView(), 1200, 700));
+                            } else {
+                                mainWindow.updateLoginStatus();
+                                mainWindow.switchPage("Beranda");
+                            }
+                        } else {
+                            String body = response.body();
+                            String errMsg = extractJson(body, "error");
+                            errorLabel.setText(errMsg != null ? errMsg : "Login gagal!");
+                            errorLabel.setVisible(true);
+                            btnLogin.setDisable(false);
+                            btnLogin.setText("Masuk");
+                        }
+                    });
+                } catch (Exception ex) {
+                    Platform.runLater(() -> {
+                        errorLabel.setText("Tidak bisa terhubung ke server. Pastikan backend berjalan.");
+                        errorLabel.setVisible(true);
+                        btnLogin.setDisable(false);
+                        btnLogin.setText("Masuk");
+                    });
+                }
+            }).start();
         });
 
-        content.getChildren().addAll(logoBox, title, emailBox, passBox, loginBtn, registerLink, errorLabel);
-        scrollPane.setContent(content);
-        root.getChildren().addAll(headerBar, scrollPane);
+        passField.setOnAction(e -> btnLogin.fire());
+        emailField.setOnAction(e -> passField.requestFocus());
 
-        Scene scene = new Scene(root, 450, 580);
-        dialogStage.setScene(scene);
-        dialogStage.showAndWait();
+        Label registerHint = new Label("Belum punya akun? ");
+        registerHint.setStyle("-fx-text-fill: #6B7280; -fx-font-size: 13px;");
+        Hyperlink registerLink = new Hyperlink("Daftar sekarang");
+        registerLink.setStyle("-fx-text-fill: #10B981; -fx-font-weight: bold; -fx-font-size: 13px;");
+        registerLink.setOnAction(e -> {
+            close();
+            RegisterDialog registerDialog = new RegisterDialog(mainWindow);
+            registerDialog.showAndWait();
+        });
+        HBox registerBox = new HBox(2, registerHint, registerLink);
+        registerBox.setAlignment(Pos.CENTER);
+
+        root.getChildren().addAll(headerBox, formBox, btnLogin, registerBox);
+
+        Scene scene = new Scene(root);
+        setScene(scene);
     }
 
-    private void showSuccessDialog(String name, String email) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Login Berhasil");
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initStyle(StageStyle.UNDECORATED);
-
-        VBox content = new VBox(20);
-        content.setAlignment(Pos.CENTER);
-        content.setPadding(new Insets(30, 35, 35, 35));
-        content.setStyle("-fx-background-color: #F0FDF4;");
-
-        StackPane iconContainer = new StackPane();
-        Circle circleBg = new Circle(50);
-        circleBg.setFill(Color.web("#10B98120"));
-        Circle circleInner = new Circle(38);
-        circleInner.setFill(Color.web("#10B981"));
-        Label checkIcon = new Label("✓");
-        checkIcon.setFont(Font.font("System", FontWeight.BOLD, 38));
-        checkIcon.setStyle("-fx-text-fill: white;");
-        iconContainer.getChildren().addAll(circleBg, circleInner, checkIcon);
-
-        Label titleLabel = new Label("Login Berhasil!");
-        titleLabel.setFont(Font.font("System", FontWeight.BOLD, 22));
-        titleLabel.setStyle("-fx-text-fill: #065F46;");
-        Label subtitleLabel = new Label("Selamat datang kembali,");
-        subtitleLabel.setStyle("-fx-text-fill: #6B7280; -fx-font-size: 14px;");
-        Label nameLabel = new Label(name + "!");
-        nameLabel.setFont(Font.font("System", FontWeight.BOLD, 18));
-        nameLabel.setStyle("-fx-text-fill: #1F2937;");
-
-        Separator sep = new Separator();
-        sep.setStyle("-fx-background-color: #E5E7EB;");
-        sep.setMaxWidth(300);
-
-        VBox detailCard = new VBox(12);
-        detailCard.setStyle("-fx-background-color: white; -fx-background-radius: 16; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.05), 5, 0, 0, 2);");
-        detailCard.setPadding(new Insets(16));
-        detailCard.setMaxWidth(350);
-        detailCard.getChildren().add(createDetailRow("📧 Email", email));
-        Separator detailSep = new Separator();
-        detailSep.setStyle("-fx-background-color: #F3F4F6;");
-        detailCard.getChildren().add(detailSep);
-        HBox bonusBox = new HBox(8);
-        bonusBox.setAlignment(Pos.CENTER_LEFT);
-        Label bonusIcon = new Label("✨");
-        bonusIcon.setStyle("-fx-font-size: 16px;");
-        Label bonusText = new Label("+10 Poin telah ditambahkan ke akun Anda!");
-        bonusText.setStyle("-fx-text-fill: #F59E0B; -fx-font-size: 13px; -fx-font-weight: bold;");
-        bonusBox.getChildren().addAll(bonusIcon, bonusText);
-        detailCard.getChildren().add(bonusBox);
-
-        Label welcomeLabel = new Label("Nikmati layanan kesehatan mental terbaik bersama VibeCare!");
-        welcomeLabel.setStyle("-fx-text-fill: #6B7280; -fx-font-size: 13px;");
-        welcomeLabel.setWrapText(true);
-        welcomeLabel.setAlignment(Pos.CENTER);
-
-        Button okButton = new Button("Mulai Sekarang");
-        okButton.setStyle("-fx-background-color: #10B981; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14px; -fx-padding: 12 30 12 30; -fx-background-radius: 30; -fx-cursor: hand;");
-        okButton.setMaxWidth(250);
-        okButton.setOnMouseEntered(e -> okButton.setStyle("-fx-background-color: #059669; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14px; -fx-padding: 12 30 12 30; -fx-background-radius: 30; -fx-cursor: hand;"));
-        okButton.setOnMouseExited(e -> okButton.setStyle("-fx-background-color: #10B981; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14px; -fx-padding: 12 30 12 30; -fx-background-radius: 30; -fx-cursor: hand;"));
-        okButton.setOnAction(e -> dialog.close());
-
-        content.getChildren().addAll(iconContainer, titleLabel, subtitleLabel, nameLabel, sep, detailCard, welcomeLabel, okButton);
-        dialog.getDialogPane().setContent(content);
-        dialog.getDialogPane().setPrefWidth(450);
-        dialog.getDialogPane().setStyle("-fx-background-color: #F0FDF4;");
-        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-        Button closeButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.CLOSE);
-        closeButton.setVisible(false);
-        dialog.showAndWait();
-    }
-
-    private HBox createDetailRow(String label, String value) {
-        HBox row = new HBox(10);
-        row.setAlignment(Pos.CENTER_LEFT);
-        Label labelLbl = new Label(label);
-        labelLbl.setStyle("-fx-text-fill: #6B7280; -fx-font-size: 13px;");
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        Label valueLbl = new Label(value);
-        valueLbl.setStyle("-fx-text-fill: #1F2937; -fx-font-size: 13px; -fx-font-weight: bold;");
-        row.getChildren().addAll(labelLbl, spacer, valueLbl);
-        return row;
-    }
-
-    public static boolean registerUser(String name, String email, String password) {
-        if (registeredUsers.containsKey(email)) return false;
-        registeredUsers.put(email, password);
-        userNames.put(email, name);
-        return true;
+    // Helper parse JSON string sederhana
+    private String extractJson(String json, String key) {
+        String search = "\"" + key + "\":\"";
+        int start = json.indexOf(search);
+        if (start == -1) return null;
+        start += search.length();
+        int end = json.indexOf("\"", start);
+        if (end == -1) return null;
+        return json.substring(start, end);
     }
 }
